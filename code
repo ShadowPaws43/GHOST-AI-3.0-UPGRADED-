@@ -1,0 +1,364 @@
+# === Required Libraries ===
+import speech_recognition as sr
+import pyttsx3
+import subprocess
+import webbrowser
+import datetime
+import random
+import tkinter as tk
+from tkinter import messagebox, Canvas
+from threading import Thread
+import sys
+import time
+# === Required Libraries ===
+import speech_recognition as sr
+import pyttsx3
+import subprocess
+import webbrowser
+import datetime
+import random
+import tkinter as tk
+from tkinter import messagebox, Canvas
+from threading import Thread
+import sys
+import time
+import os
+import json
+import psutil
+import requests
+import wikipedia
+import schedule
+import glob
+from googletrans import Translator
+from tkinter import filedialog
+from PIL import Image, ImageTk
+
+# ==== CONFIGURATION ====
+USERNAME = "ShadowPaws"  # Change to your name
+NOTES_FILE = "ghost_notes.json"
+TODO_FILE = "ghost_todos.json"
+WEATHER_API_KEY = "your_openweathermap_api_key"  # Insert your OpenWeatherMap API key here
+CITY = "Delhi"
+
+translator = Translator()
+
+# ==== INITIALIZE ENGINES ====
+engine = pyttsx3.init()
+voices = engine.getProperty('voices')
+engine.setProperty('voice', voices[0].id)
+engine.setProperty('rate', 170)
+running = True
+
+# ==== UTILITIES ====
+def speak(text):
+    print(f"Ghost 🔤️: {text}")
+    engine.say(text)
+    engine.runAndWait()
+
+def listen():
+    recognizer = sr.Recognizer()
+    with sr.Microphone() as source:
+        print("🎤 Ghost is listening...")
+        recognizer.pause_threshold = 1
+        audio = recognizer.listen(source)
+    try:
+        command = recognizer.recognize_google(audio)
+        print(f"You 🧠: {command}")
+        return command.lower()
+    except sr.UnknownValueError:
+        speak("I didn't catch that. Say it again?")
+        return ""
+    except sr.RequestError:
+        speak("Network issue. Cannot connect to the internet.")
+        return ""
+
+def load_data(file):
+    if os.path.exists(file):
+        with open(file, 'r') as f:
+            return json.load(f)
+    return []
+
+def save_data(file, data):
+    with open(file, 'w') as f:
+        json.dump(data, f, indent=4)
+
+def get_weather():
+    url = f"https://api.openweathermap.org/data/2.5/weather?q={CITY}&appid={WEATHER_API_KEY}&units=metric"
+    try:
+        res = requests.get(url).json()
+        if res.get("main"):
+            temp = res['main']['temp']
+            desc = res['weather'][0]['description']
+            return f"The weather in {CITY} is {desc} with a temperature of {temp}°C."
+        return "Couldn't fetch weather data."
+    except:
+        return "Error retrieving weather."
+
+# ==== MAIN FUNCTIONALITY ====
+def run_ghost(status_var, ui):
+    global running
+    speak(f"Ghost is online. Welcome back sir, {USERNAME}.")
+    status_var.set("Listening...")
+    ui.speaking = False
+
+    while running:
+        command = listen()
+        if not command:
+            continue
+        ui.speaking = True
+
+        if "time" in command:
+            speak(datetime.datetime.now().strftime('%I:%M %p'))
+
+        elif "date" in command:
+            speak(datetime.datetime.now().strftime('%A, %B %d, %Y'))
+
+        elif "weather" in command:
+            speak(get_weather())
+
+        elif "note" in command or "take a note" in command:
+            speak("What should I note?")
+            note = listen()
+            if note:
+                notes = load_data(NOTES_FILE)
+                notes.append({"note": note, "time": time.ctime()})
+                save_data(NOTES_FILE, notes)
+                speak("Note saved.")
+
+        elif "show notes" in command:
+            notes = load_data(NOTES_FILE)
+            if notes:
+                for n in notes:
+                    speak(f"{n['note']} at {n['time']}")
+            else:
+                speak("No notes found.")
+
+        elif "add task" in command:
+            speak("What task should I add?")
+            task = listen()
+            if task:
+                todos = load_data(TODO_FILE)
+                todos.append(task)
+                save_data(TODO_FILE, todos)
+                speak("Task added to your to-do list.")
+
+        elif "show tasks" in command or "to do" in command:
+            todos = load_data(TODO_FILE)
+            if todos:
+                for t in todos:
+                    speak(t)
+            else:
+                speak("No tasks on your list.")
+
+        elif "wikipedia" in command:
+            topic = command.replace("wikipedia", "").strip()
+            if topic:
+                try:
+                    summary = wikipedia.summary(topic, sentences=2)
+                    speak(summary)
+                except:
+                    speak("Couldn't find that on Wikipedia.")
+
+        elif "translate" in command:
+            if "to" in command:
+                parts = command.split("to")
+                phrase = parts[0].replace("translate", "").strip()
+                target_lang = parts[1].strip()
+                try:
+                    translation = translator.translate(phrase, dest=target_lang)
+                    speak(f"{phrase} in {target_lang} is {translation.text}")
+                except:
+                    speak("I couldn't translate that.")
+
+        elif "open download" in command:
+            downloads_path = os.path.join(os.path.expanduser('~'), 'Downloads')
+            speak("Opening Downloads folder")
+            os.startfile(downloads_path)
+
+        elif "find file" in command:
+            speak("What filename should I search for?")
+            filename = listen()
+            found_files = []
+            for root, dirs, files in os.walk(os.path.expanduser("~")):
+                for file in files:
+                    if filename.lower() in file.lower():
+                        found_files.append(os.path.join(root, file))
+                        break
+                if found_files:
+                    break
+            if found_files:
+                speak("Opening file")
+                os.startfile(found_files[0])
+            else:
+                speak("Couldn't find that file.")
+
+        elif "search for" in command:
+            search_term = command.replace("search for", "").strip()
+            if search_term:
+                speak(f"Searching Google for {search_term}")
+                webbrowser.open(f"https://www.google.com/search?q={search_term}")
+
+        elif "open youtube" in command:
+            speak("Opening YouTube")
+            webbrowser.open("https://youtube.com")
+
+        elif "close browser" in command or "close chrome" in command:
+            speak("Closing Chrome browser")
+            for proc in psutil.process_iter():
+                if proc.name().lower() == "chrome.exe":
+                    proc.kill()
+
+        elif "exit" in command or "stop" in command:
+            speak("Ghost going offline. Goodbye.")
+            running = False
+            ui.on_close()
+            break
+
+        else:
+            speak("I'm not sure how to respond to that yet.")
+
+        ui.speaking = False
+        status_var.set("Listening...")
+
+# === UI CLASSES ===
+class GhostUI(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Ghost Assistant")
+        self.geometry("600x600")
+        self.config(bg="black")
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        self.status_var = tk.StringVar()
+        self.status_var.set("Activating...")
+
+        self.canvas = Canvas(self, width=400, height=400, bg="black", highlightthickness=0)
+        self.canvas.pack(pady=20)
+
+        self.status_label = tk.Label(self, textvariable=self.status_var, fg="cyan", bg="black", font=("Consolas", 14))
+        self.status_label.pack()
+
+        self.datetime_label = tk.Label(self, text="", fg="lime", bg="black", font=("Consolas", 12))
+        self.datetime_label.pack()
+
+        self.user_label = tk.Label(self, text=f"Welcome {USERNAME}!", fg="yellow", bg="black", font=("Consolas", 12))
+        self.user_label.pack()
+
+        self.speaking = False
+        self.update_datetime()
+        self.animate_circle()
+
+        Thread(target=run_ghost, args=(self.status_var, self)).start()
+
+    def update_datetime(self):
+        now = datetime.datetime.now().strftime("%A %H:%M:%S")
+        self.datetime_label.config(text=now)
+        self.after(1000, self.update_datetime)
+
+    def animate_circle(self):
+        self.canvas.delete("all")
+        color = "cyan" if self.speaking else "gray"
+        extent = 360 if self.speaking else 180
+
+        self.canvas.create_oval(50, 50, 350, 350, outline=color, width=4)
+        self.canvas.create_arc(60, 60, 340, 340, start=0, extent=extent, outline=color, style="arc", width=4)
+        self.after(200, self.animate_circle)
+
+    def on_close(self):
+        self.destroy()
+        sys.exit()
+
+class PasswordScreen(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Access Terminal")
+        self.geometry("400x200")
+        self.config(bg="black")
+
+        tk.Label(self, text="Enter Access Code:", fg="lime", bg="black", font=("Consolas", 14)).pack(pady=20)
+        self.entry = tk.Entry(self, show="*", font=("Consolas", 14), bg="black", fg="lime", insertbackground="lime")
+        self.entry.pack()
+        self.entry.bind("<Return>", self.check_password)
+        self.entry.focus()
+
+    def check_password(self, event):
+        if self.entry.get() == "ghost":
+            self.destroy()
+            GhostUI().mainloop()
+        else:
+            messagebox.showerror("Access Denied", "Wrong code. Try again.")
+
+# === LAUNCH ===
+if __name__ == "__main__":
+    PasswordScreen().mainloop()
+
+class GhostUI(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Ghost Assistant")
+        self.geometry("600x600")
+        self.config(bg="black")
+        self.protocol("WM_DELETE_WINDOW", self.on_close)
+
+        self.status_var = tk.StringVar()
+        self.status_var.set("Activating...")
+
+        self.canvas = Canvas(self, width=400, height=400, bg="black", highlightthickness=0)
+        self.canvas.pack(pady=20)
+
+        self.status_label = tk.Label(self, textvariable=self.status_var, fg="cyan", bg="black", font=("Consolas", 14))
+        self.status_label.pack()
+
+        self.datetime_label = tk.Label(self, text="", fg="lime", bg="black", font=("Consolas", 12))
+        self.datetime_label.pack()
+
+        self.user_label = tk.Label(self, text=f"Welcome {USERNAME}!", fg="yellow", bg="black", font=("Consolas", 12))
+        self.user_label.pack()
+
+        self.speaking = False
+        self.update_datetime()
+        self.animate_circle()
+
+        Thread(target=run_ghost, args=(self.status_var, self)).start()
+
+    def update_datetime(self):
+        now = datetime.datetime.now().strftime("%A %H:%M:%S")
+        self.datetime_label.config(text=now)
+        self.after(1000, self.update_datetime)
+
+    def animate_circle(self):
+        self.canvas.delete("all")
+        color = "cyan" if self.speaking else "gray"
+        extent = 360 if self.speaking else 180
+
+        self.canvas.create_oval(50, 50, 350, 350, outline=color, width=4)
+        self.canvas.create_arc(60, 60, 340, 340, start=0, extent=extent, outline=color, style="arc", width=4)
+        self.after(200, self.animate_circle)
+
+    def on_close(self):
+        self.destroy()
+        sys.exit()
+
+class PasswordScreen(tk.Tk):
+    def __init__(self):
+        super().__init__()
+        self.title("Access Terminal")
+        self.geometry("400x200")
+        self.config(bg="black")
+
+        tk.Label(self, text="Enter Access Code:", fg="lime", bg="black", font=("Consolas", 14)).pack(pady=20)
+        self.entry = tk.Entry(self, show="*", font=("Consolas", 14), bg="black", fg="lime", insertbackground="lime")
+        self.entry.pack()
+        self.entry.bind("<Return>", self.check_password)
+        self.entry.focus()
+
+    def check_password(self, event):
+        if self.entry.get() == "ghost":
+            self.destroy()
+            GhostUI().mainloop()
+        else:
+            messagebox.showerror("Access Denied", "Wrong code. Try again.")
+
+# === LAUNCH ===
+if __name__ == "__main__":
+    PasswordScreen().mainloop()
